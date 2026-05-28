@@ -16,6 +16,7 @@ const evt = (partial: Partial<TerminalKeyEvent>): TerminalKeyEvent => ({
   metaKey: false,
   key: "",
   code: "",
+  getModifierState: () => false,
   ...partial,
 });
 
@@ -157,6 +158,20 @@ describe("terminalGsdShortcutSequence", () => {
     expect(
       terminalGsdShortcutSequence(
         evt({ ctrlKey: true, altKey: true, key: "x", code: "KeyX" }),
+      ),
+    ).toBeNull();
+  });
+
+  it("does not map AltGraph printable input as a Ctrl+Alt shortcut", () => {
+    expect(
+      terminalGsdShortcutSequence(
+        evt({
+          ctrlKey: true,
+          altKey: true,
+          key: "ń",
+          code: "KeyN",
+          getModifierState: (modifier) => modifier === "AltGraph",
+        }),
       ),
     ).toBeNull();
   });

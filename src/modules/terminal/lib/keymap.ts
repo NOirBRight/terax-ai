@@ -1,7 +1,9 @@
 export type TerminalKeyEvent = Pick<
   KeyboardEvent,
   "altKey" | "ctrlKey" | "shiftKey" | "metaKey" | "key" | "code"
->;
+> & {
+  getModifierState?: KeyboardEvent["getModifierState"];
+};
 
 export type PlatformOpts = { isMac: boolean };
 
@@ -27,7 +29,7 @@ export function terminalEditorNewlineSequence(
 export function terminalGsdShortcutSequence(
   event: TerminalKeyEvent,
 ): string | null {
-  if (event.metaKey) return null;
+  if (event.metaKey || hasAltGraphModifier(event)) return null;
   if (event.ctrlKey && event.altKey && !event.shiftKey) {
     const ctrl = ctrlCharForEvent(event, new Set(["b", "g", "n", "p", "v", "]"]));
     return ctrl ? `\x1b${ctrl}` : null;
@@ -38,6 +40,10 @@ export function terminalGsdShortcutSequence(
     return `\x1b[${key.charCodeAt(0)};6u`;
   }
   return null;
+}
+
+function hasAltGraphModifier(event: TerminalKeyEvent): boolean {
+  return event.getModifierState?.("AltGraph") ?? false;
 }
 
 function ctrlCharForEvent(
