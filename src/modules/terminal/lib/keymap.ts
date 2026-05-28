@@ -5,6 +5,25 @@ export type TerminalKeyEvent = Pick<
 
 export type PlatformOpts = { isMac: boolean };
 
+const SHIFT_ENTER_CSI_U = "\x1b[13;2u";
+
+export function terminalEditorNewlineSequence(
+  event: TerminalKeyEvent,
+): string | null {
+  const isEnter =
+    event.key === "Enter" ||
+    event.code === "Enter" ||
+    event.code === "NumpadEnter";
+  if (!isEnter || event.altKey || event.metaKey) return null;
+
+  // xterm.js collapses Shift+Enter and Ctrl+Enter to a plain carriage return.
+  // Emit an unambiguous CSI-u Shift+Enter sequence that Pi's editor treats as
+  // its newline action. Ctrl+Enter is intentionally translated to the same
+  // action for Windows users and terminals that do not expose Shift+Enter well.
+  if (event.shiftKey || event.ctrlKey) return SHIFT_ENTER_CSI_U;
+  return null;
+}
+
 export function terminalGsdShortcutSequence(
   event: TerminalKeyEvent,
 ): string | null {

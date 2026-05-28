@@ -15,6 +15,22 @@ async function lastHex(page: Page): Promise<string | null> {
   return page.evaluate(() => window.__lastSequence?.hex ?? null);
 }
 
+test.describe("terminal editor newline shortcuts", () => {
+  for (const combo of ["Shift+Enter", "Control+Enter"] as const) {
+    test(`passes ${combo} through as Pi newline input`, async ({ page }) => {
+      await page.keyboard.press(combo);
+
+      await expect.poll(() => lastHex(page)).toBe("1b 5b 31 33 3b 32 75");
+    });
+  }
+
+  test("does not remap Alt+Enter to newline", async ({ page }) => {
+    await page.keyboard.press("Alt+Enter");
+
+    await expect.poll(() => lastHex(page)).toBeNull();
+  });
+});
+
 test.describe("GSD terminal shortcuts", () => {
   for (const [combo, hex] of [
     ["Control+Alt+B", "1b 02"],

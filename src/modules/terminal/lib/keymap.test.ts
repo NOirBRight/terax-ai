@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   terminalDeleteSequence,
+  terminalEditorNewlineSequence,
   terminalGsdShortcutSequence,
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
@@ -77,6 +78,41 @@ describe("terminalLineNavigationSequence", () => {
       terminalLineNavigationSequence(
         evt({ metaKey: true, altKey: true, key: "ArrowLeft", code: "ArrowLeft" }),
         { isMac: true },
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("terminalEditorNewlineSequence", () => {
+  it.each([
+    ["Shift+Enter", { shiftKey: true }],
+    ["Ctrl+Enter", { ctrlKey: true }],
+  ])("maps %s to Pi's newline shortcut sequence", (_label, partial) => {
+    expect(
+      terminalEditorNewlineSequence(
+        evt({ ...partial, key: "Enter", code: "Enter" }),
+      ),
+    ).toBe("\x1b[13;2u");
+  });
+
+  it("also maps NumpadEnter", () => {
+    expect(
+      terminalEditorNewlineSequence(
+        evt({ shiftKey: true, key: "Enter", code: "NumpadEnter" }),
+      ),
+    ).toBe("\x1b[13;2u");
+  });
+
+  it("does not map plain Enter", () => {
+    expect(
+      terminalEditorNewlineSequence(evt({ key: "Enter", code: "Enter" })),
+    ).toBeNull();
+  });
+
+  it("leaves Alt+Enter untouched", () => {
+    expect(
+      terminalEditorNewlineSequence(
+        evt({ altKey: true, key: "Enter", code: "Enter" }),
       ),
     ).toBeNull();
   });

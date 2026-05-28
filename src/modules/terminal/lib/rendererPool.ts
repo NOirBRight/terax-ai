@@ -10,6 +10,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import {
   terminalDeleteSequence,
+  terminalEditorNewlineSequence,
   terminalGsdShortcutSequence,
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
@@ -191,9 +192,10 @@ function createSlot(): Slot {
       if (event.type === "keydown") bridge.writeToPty(deleteSeq);
       return false;
     }
-    if (isShiftEnter(event)) {
+    const editorNewlineSeq = terminalEditorNewlineSequence(event);
+    if (editorNewlineSeq) {
       event.preventDefault();
-      if (event.type === "keydown") bridge.writeToPty("\x1b\r");
+      if (event.type === "keydown") bridge.writeToPty(editorNewlineSeq);
       return false;
     }
     if (isTerminalCopy(event)) {
@@ -724,8 +726,3 @@ function isTerminalPaste(e: KeyboardEvent): boolean {
   );
 }
 
-function isShiftEnter(e: KeyboardEvent): boolean {
-  return (
-    e.key === "Enter" && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
-  );
-}

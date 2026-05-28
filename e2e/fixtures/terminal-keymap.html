@@ -14,7 +14,10 @@
     <div id="terminal" tabindex="0" role="textbox" aria-label="terminal input">Terminal key target</div>
     <pre id="sequence"></pre>
     <script type="module">
-      import { terminalGsdShortcutSequence } from "/src/modules/terminal/lib/keymap.ts";
+      import {
+        terminalEditorNewlineSequence,
+        terminalGsdShortcutSequence,
+      } from "/src/modules/terminal/lib/keymap.ts";
 
       const target = document.getElementById("terminal");
       const output = document.getElementById("sequence");
@@ -25,7 +28,7 @@
       }
 
       target.addEventListener("keydown", (event) => {
-        const seq = terminalGsdShortcutSequence(event);
+        const seq = terminalEditorNewlineSequence(event) ?? terminalGsdShortcutSequence(event);
         if (!seq) return;
         event.preventDefault();
         window.__lastSequence = { raw: seq, hex: toHex(seq) };
