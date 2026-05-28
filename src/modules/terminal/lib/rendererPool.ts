@@ -10,6 +10,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import {
   terminalDeleteSequence,
+  terminalGsdShortcutSequence,
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
 } from "./keymap";
@@ -176,6 +177,12 @@ function createSlot(): Slot {
     if (wordNavigation) {
       event.preventDefault();
       if (event.type === "keydown") bridge.writeToPty(wordNavigation);
+      return false;
+    }
+    const gsdShortcutSeq = terminalGsdShortcutSequence(event);
+    if (gsdShortcutSeq) {
+      event.preventDefault();
+      if (event.type === "keydown") bridge.writeToPty(gsdShortcutSeq);
       return false;
     }
     const deleteSeq = terminalDeleteSequence(event, { isMac: IS_MAC });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   terminalDeleteSequence,
+  terminalGsdShortcutSequence,
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
   type TerminalKeyEvent,
@@ -10,6 +11,7 @@ import {
 const evt = (partial: Partial<TerminalKeyEvent>): TerminalKeyEvent => ({
   altKey: false,
   ctrlKey: false,
+  shiftKey: false,
   metaKey: false,
   key: "",
   code: "",
@@ -75,6 +77,50 @@ describe("terminalLineNavigationSequence", () => {
       terminalLineNavigationSequence(
         evt({ metaKey: true, altKey: true, key: "ArrowLeft", code: "ArrowLeft" }),
         { isMac: true },
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("terminalGsdShortcutSequence", () => {
+  it.each([
+    ["b", "KeyB", "\x1b\x02"],
+    ["g", "KeyG", "\x1b\x07"],
+    ["n", "KeyN", "\x1b\x0e"],
+    ["p", "KeyP", "\x1b\x10"],
+    ["v", "KeyV", "\x1b\x16"],
+    ["]", "BracketRight", "\x1b\x1d"],
+  ])("maps Ctrl+Alt+%s to GSD's terminal sequence", (key, code, seq) => {
+    expect(
+      terminalGsdShortcutSequence(
+        evt({ ctrlKey: true, altKey: true, key, code }),
+      ),
+    ).toBe(seq);
+  });
+
+  it.each([
+    ["g", "KeyG", "\x1b[103;6u"],
+    ["n", "KeyN", "\x1b[110;6u"],
+  ])("maps Ctrl+Shift+%s fallback to a CSI-u sequence", (key, code, seq) => {
+    expect(
+      terminalGsdShortcutSequence(
+        evt({ ctrlKey: true, shiftKey: true, key: key.toUpperCase(), code }),
+      ),
+    ).toBe(seq);
+  });
+
+  it("does not map plain Ctrl+N", () => {
+    expect(
+      terminalGsdShortcutSequence(
+        evt({ ctrlKey: true, key: "n", code: "KeyN" }),
+      ),
+    ).toBeNull();
+  });
+
+  it("does not map arbitrary Ctrl+Alt letters", () => {
+    expect(
+      terminalGsdShortcutSequence(
+        evt({ ctrlKey: true, altKey: true, key: "x", code: "KeyX" }),
       ),
     ).toBeNull();
   });

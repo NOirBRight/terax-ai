@@ -1,9 +1,45 @@
 export type TerminalKeyEvent = Pick<
   KeyboardEvent,
-  "altKey" | "ctrlKey" | "metaKey" | "key" | "code"
+  "altKey" | "ctrlKey" | "shiftKey" | "metaKey" | "key" | "code"
 >;
 
 export type PlatformOpts = { isMac: boolean };
+
+export function terminalGsdShortcutSequence(
+  event: TerminalKeyEvent,
+): string | null {
+  if (event.metaKey) return null;
+  if (event.ctrlKey && event.altKey && !event.shiftKey) {
+    const ctrl = ctrlCharForEvent(event, new Set(["b", "g", "n", "p", "v", "]"]));
+    return ctrl ? `\x1b${ctrl}` : null;
+  }
+  if (event.ctrlKey && event.shiftKey && !event.altKey) {
+    const key = normalizedKey(event);
+    if (key !== "g" && key !== "n") return null;
+    return `\x1b[${key.charCodeAt(0)};6u`;
+  }
+  return null;
+}
+
+function ctrlCharForEvent(
+  event: TerminalKeyEvent,
+  allowed: ReadonlySet<string>,
+): string | null {
+  const key = normalizedKey(event);
+  if (!allowed.has(key)) return null;
+  if (key === "]") return "\x1d";
+  const code = key.charCodeAt(0) - 96;
+  if (code < 1 || code > 26) return null;
+  return String.fromCharCode(code);
+}
+
+function normalizedKey(event: TerminalKeyEvent): string {
+  if (event.code.startsWith("Key") && event.code.length === 4) {
+    return event.code.slice(3).toLowerCase();
+  }
+  if (event.code === "BracketRight") return "]";
+  return event.key.toLowerCase();
+}
 
 export function terminalWordNavigationSequence(event: TerminalKeyEvent): string | null {
   if (!event.altKey || event.ctrlKey || event.metaKey) return null;
