@@ -136,8 +136,8 @@ describe("terminalGsdShortcutSequence", () => {
   });
 
   it.each([
-    ["g", "KeyG", "\x1b[103;6u"],
-    ["n", "KeyN", "\x1b[110;6u"],
+    ["g", "KeyG", "\x1b[103;5u"],
+    ["n", "KeyN", "\x1b[110;5u"],
   ])("maps Ctrl+Shift+%s fallback to a CSI-u sequence", (key, code, seq) => {
     expect(
       terminalGsdShortcutSequence(

@@ -37,7 +37,7 @@ export function terminalGsdShortcutSequence(
   if (event.ctrlKey && event.shiftKey && !event.altKey) {
     const key = normalizedKey(event);
     if (key !== "g" && key !== "n") return null;
-    return `\x1b[${key.charCodeAt(0)};6u`;
+    return `\x1b[${key.charCodeAt(0)};5u`;
   }
   return null;
 }
