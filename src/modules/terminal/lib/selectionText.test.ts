@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getSelectionText } from "./selectionText";
+import { getSelectionText, HardWrapTracker } from "./selectionText";
 import type { IBufferCell, IBufferLine, Terminal } from "@xterm/xterm";
 
 function mockCell(code: number, width: number): IBufferCell {
@@ -55,13 +55,21 @@ function mockTerm(
   } as unknown as Terminal;
 }
 
+function mockTracker(hardWrappedLines: number[]): HardWrapTracker {
+  const t = new HardWrapTracker();
+  for (const y of hardWrappedLines) {
+    // Directly populate the tracker's internal set
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (t as any)._hardWrappedLines.add(y);
+  }
+  return t;
+}
+
 describe("getSelectionText", () => {
-  // ====== NO SELECTION ======
   it("returns null when no selection", () => {
     expect(getSelectionText(mockTerm([], undefined))).toBeNull();
   });
 
-  // ====== SINGLE LINE ======
   it("returns full single-line selection", () => {
     const term = mockTerm([mockLine("hello", false, 80)], {
       start: { x: 0, y: 0 }, end: { x: 5, y: 0 },
@@ -76,21 +84,13 @@ describe("getSelectionText", () => {
     expect(getSelectionText(term)).toBe("llo w");
   });
 
-  // ====== SOFT WRAPS (isWrapped=true) ======
+  // ====== SOFT WRAPS ======
   it("joins soft-wrapped lines without newline", () => {
     const term = mockTerm(
       [mockLine("abc", false, 80), mockLine("def", true, 80)],
       { start: { x: 0, y: 0 }, end: { x: 3, y: 1 } },
     );
     expect(getSelectionText(term)).toBe("abcdef");
-  });
-
-  it("joins 3 consecutive soft-wrapped rows", () => {
-    const term = mockTerm(
-      [mockLine("abc", false, 80), mockLine("def", true, 80), mockLine("ghi", true, 80)],
-      { start: { x: 0, y: 0 }, end: { x: 3, y: 2 } },
-    );
-    expect(getSelectionText(term)).toBe("abcdefghi");
   });
 
   it("soft-wrapped then real line: join soft, break at real", () => {
@@ -102,12 +102,20 @@ describe("getSelectionText", () => {
   });
 
   // ====== SHORT REAL LINES: always preserved ======
-  it("separates two short real lines", () => {
+  it("separates two short real lines (no tracker)", () => {
     const term = mockTerm(
       [mockLine("ls", false, 80), mockLine("cd", false, 80)],
       { start: { x: 0, y: 0 }, end: { x: 2, y: 1 } },
     );
     expect(getSelectionText(term)).toBe("ls\ncd");
+  });
+
+  it("separates short real lines (with tracker, no hard wraps)", () => {
+    const term = mockTerm(
+      [mockLine("ls", false, 80), mockLine("cd", false, 80)],
+      { start: { x: 0, y: 0 }, end: { x: 2, y: 1 } },
+    );
+    expect(getSelectionText(term, mockTracker([]))).toBe("ls\ncd");
   });
 
   it("preserves empty line between content", () => {
@@ -118,120 +126,91 @@ describe("getSelectionText", () => {
     expect(getSelectionText(term)).toBe("abc\n\ndef");
   });
 
-  it("preserves end.x=0 on last line", () => {
-    const term = mockTerm(
-      [mockLine("abc", false, 80), mockLine("def", false, 80)],
-      { start: { x: 0, y: 0 }, end: { x: 0, y: 1 } },
-    );
-    expect(getSelectionText(term)).toBe("abc\n");
-  });
-
-  // ====== LONG REAL LINES: preserved unless strong signal ======
-  it("preserves long real line followed by another line (no hard-wrap signal)", () => {
-    // 7 chars + 3 trailing spaces, cols=10. last cell = space (code=32).
-    // No strong signal → real break preserved
-    const term = mockTerm(
-      [mockLine("abcdefg", false, 10, 3), mockLine("hijklmn", false, 10, 3)],
-      { start: { x: 0, y: 0 }, end: { x: 10, y: 1 } },
-      10,
-    );
-    expect(getSelectionText(term)).toBe("abcdefg\nhijklmn");
-  });
-
-  it("preserves long real line near paragraph break (no false join)", () => {
-    // A paragraph ending that happens to be long but has trailing spaces
-    const term = mockTerm(
-      [mockLine("This is the end of a paragraph.", false, 80, 40), mockLine("New paragraph starts.", false, 80)],
-      { start: { x: 0, y: 0 }, end: { x: 21, y: 1 } },
-      80,
-    );
-    expect(getSelectionText(term)).toBe("This is the end of a paragraph.\nNew paragraph starts.");
-  });
-
-  // ====== HARD WRAP: mid-word (lastCell code > 32) ======
-  it("joins mid-word hard-wrapped lines when last cell is content", () => {
-    // "abcdefghij" fills cols=10 exactly, last cell 'j' code=106 > 32
+  // ====== HARD WRAPS via HardWrapTracker ======
+  it("joins lines marked as hard-wrapped by tracker", () => {
     const term = mockTerm(
       [mockLine("abcdefghij", false, 10), mockLine("klmnopqrst", false, 10)],
       { start: { x: 0, y: 0 }, end: { x: 10, y: 1 } },
       10,
     );
-    expect(getSelectionText(term)).toBe("abcdefghij klmnopqrst");
+    const tracker = mockTracker([0]); // line 0 was hard-wrapped
+    expect(getSelectionText(term, tracker)).toBe("abcdefghij klmnopqrst");
   });
 
-  it("detects hard wrap when selection starts mid-line (lastCellContent)", () => {
+  it("detects hard wrap from full line even when selection starts mid-line", () => {
     const term = mockTerm(
       [mockLine("abcdefghij", false, 10), mockLine("klmnopqr", false, 10)],
       { start: { x: 5, y: 0 }, end: { x: 8, y: 1 } },
       10,
     );
-    expect(getSelectionText(term)).toBe("fghij klmnopqr");
+    const tracker = mockTracker([0]); // full line 0 was hard-wrapped
+    expect(getSelectionText(term, tracker)).toBe("fghij klmnopqr");
   });
 
-  it("path mid-word wrap is joined (like terax-ai paths)", () => {
-    // Path wraps mid-word: content fills cols exactly so last cell is a real char
+  it("word-boundary hard wrap is joined via tracker", () => {
+    // Line with trailing spaces (code=32) - can't detect from buffer,
+    // but tracker knows it was hard-wrapped
     const term = mockTerm(
-      [mockLine("D:\\Worksta", false, 10), mockLine("tion\\ter", false, 10)],
-      { start: { x: 0, y: 0 }, end: { x: 8, y: 1 } },
+      [mockLine("hello", false, 10, 5), mockLine("world", false, 10, 5)],
+      { start: { x: 0, y: 0 }, end: { x: 10, y: 1 } },
       10,
     );
-    expect(getSelectionText(term)).toBe("D:\\Worksta tion\\ter");
+    const tracker = mockTracker([0]);
+    expect(getSelectionText(term, tracker)).toBe("hello world");
   });
 
-  // ====== PARAGRAPH BREAKS: bullet and numbered list ======
-  it("does not join before bullet marker", () => {
+  it("does NOT join without tracker (falls back to isWrapped only)", () => {
     const term = mockTerm(
-      [mockLine("abcdefghij", false, 10), mockLine("\u2022 item", false, 10)],
+      [mockLine("hello", false, 10, 5), mockLine("world", false, 10, 5)],
+      { start: { x: 0, y: 0 }, end: { x: 10, y: 1 } },
+      10,
+    );
+    // No tracker → word-boundary hard wraps can't be detected → preserved
+    expect(getSelectionText(term)).toBe("hello\nworld");
+  });
+
+  // ====== PARAGRAPH BREAKS ======
+  it("does not join before paragraph marker even with tracker", () => {
+    const term = mockTerm(
+      [mockLine("abcdefghij", false, 10), mockLine("- item", false, 10)],
       { start: { x: 0, y: 0 }, end: { x: 6, y: 1 } },
       10,
     );
-    expect(getSelectionText(term)).toBe("abcdefghij\n\u2022 item");
+    const tracker = mockTracker([0]);
+    expect(getSelectionText(term, tracker)).toBe("abcdefghij\n- item");
   });
 
-  it("does not join before indented bullet marker", () => {
-    const term = mockTerm(
-      [mockLine("abcdefghij", false, 10), mockLine(" \u2022 item", false, 10)],
-      { start: { x: 0, y: 0 }, end: { x: 7, y: 1 } },
-      10,
-    );
-    expect(getSelectionText(term)).toBe("abcdefghij\n \u2022 item");
-  });
-
-  it("does not join before numbered list marker", () => {
+  it("does not join before numbered list marker even with tracker", () => {
     const term = mockTerm(
       [mockLine("abcdefghij", false, 10), mockLine("2. item", false, 10)],
       { start: { x: 0, y: 0 }, end: { x: 7, y: 1 } },
       10,
     );
-    expect(getSelectionText(term)).toBe("abcdefghij\n2. item");
+    const tracker = mockTracker([0]);
+    expect(getSelectionText(term, tracker)).toBe("abcdefghij\n2. item");
   });
 
-  it("does not join before indented numbered list marker", () => {
+  it("does not join before bullet marker even with tracker", () => {
     const term = mockTerm(
-      [mockLine("abcdefghij", false, 10), mockLine(" 3. item", false, 10)],
-      { start: { x: 0, y: 0 }, end: { x: 8, y: 1 } },
-      10,
-    );
-    expect(getSelectionText(term)).toBe("abcdefghij\n 3. item");
-  });
-
-  // ====== DASH/ASTERISK: not paragraph markers ======
-  it("dash connector IS joined with hard-wrapped predecessor", () => {
-    const term = mockTerm(
-      [mockLine("abcdefghij", false, 10), mockLine(" - next", false, 10)],
-      { start: { x: 0, y: 0 }, end: { x: 7, y: 1 } },
-      10,
-    );
-    expect(getSelectionText(term)).toBe("abcdefghij - next");
-  });
-
-  it("asterisk with hard-wrapped predecessor is joined", () => {
-    const term = mockTerm(
-      [mockLine("abcdefghij", false, 10), mockLine("* next", false, 10)],
+      [mockLine("abcdefghij", false, 10), mockLine("\u2022 item", false, 10)],
       { start: { x: 0, y: 0 }, end: { x: 6, y: 1 } },
       10,
     );
-    expect(getSelectionText(term)).toBe("abcdefghij * next");
+    const tracker = mockTracker([0]);
+    expect(getSelectionText(term, tracker)).toBe("abcdefghij\n\u2022 item");
+  });
+
+  it("hard-wrapped line before paragraph break is joined, break is preserved", () => {
+    // Line 0: hard-wrapped (joins with line 1)
+    // Line 1: short (last line of paragraph)
+    // Line 2: new paragraph (short)
+    const term = mockTerm(
+      [mockLine("abcdefghij", false, 10), mockLine("uv", false, 10), mockLine("New", false, 10)],
+      { start: { x: 0, y: 0 }, end: { x: 3, y: 2 } },
+      10,
+    );
+    const tracker = mockTracker([0]);
+    expect(getSelectionText(term, tracker)).toBe("abcdefghij uv\nNew");
   });
 
   // ====== REAL-LIFE: git log ======

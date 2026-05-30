@@ -15,7 +15,7 @@ import {
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
 } from "./keymap";
-import { getSelectionText } from "./selectionText";
+import { getSelectionText, HardWrapTracker } from "./selectionText";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -59,6 +59,7 @@ export type Slot = {
   lastH: number;
   lastUsedAt: number;
   copyListener: ((e: ClipboardEvent) => void) | null;
+  hardWrapTracker: HardWrapTracker;
 };
 
 const slots: Slot[] = [];
@@ -160,7 +161,10 @@ function createSlot(): Slot {
     lastH: 0,
     lastUsedAt: 0,
     copyListener: null,
+    hardWrapTracker: new HardWrapTracker(),
   };
+
+  slot.hardWrapTracker.attach(term);
 
   attachWebgl(slot);
 
@@ -203,7 +207,7 @@ function createSlot(): Slot {
     }
     if (isTerminalCopy(event)) {
       if (event.type === "keydown" && slot.term.hasSelection()) {
-        const text = getSelectionText(slot.term);
+        const text = getSelectionText(slot.term, slot.hardWrapTracker);
         if (text) {
           void navigator.clipboard.writeText(text).catch(() => {});
         }
@@ -432,6 +436,7 @@ function rewireSlot(slot: Slot, p: AcquireParams): void {
   slot.lastCols = slot.term.cols;
   slot.lastRows = slot.term.rows;
   attachCopyListener(slot);
+  slot.hardWrapTracker.attach(slot.term);
   p.onSearchReady(slot.searchAddon);
 }
 
@@ -513,7 +518,7 @@ function attachCopyListener(slot: Slot): void {
     if (!slot.term.hasSelection()) return;
     e.preventDefault();
     e.stopPropagation();
-    const text = getSelectionText(slot.term);
+    const text = getSelectionText(slot.term, slot.hardWrapTracker);
     if (text && e.clipboardData) {
       e.clipboardData.setData("text/plain", text);
     }
@@ -527,6 +532,7 @@ function detachSlotFromLeaf(slot: Slot): void {
     slot.host.removeEventListener("copy", slot.copyListener, true);
     slot.copyListener = null;
   }
+  slot.hardWrapTracker.detach();
 
   for (const d of slot.oscDisposers) {
     try {
