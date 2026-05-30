@@ -38,7 +38,12 @@ export function getSelectionText(term: Terminal): string | null {
   const buf = term.buffer.active;
   const cols = term.cols;
 
-  const parts: { text: string; wrapped: boolean }[] = [];
+  const parts: {
+    text: string;
+    wrapped: boolean;
+    fullCw: number;
+    fullLineText: string;
+  }[] = [];
 
   for (let y = start.y; y <= end.y; y++) {
     const line = buf.getLine(y);
@@ -55,7 +60,13 @@ export function getSelectionText(term: Terminal): string | null {
       text = line.translateToString(true);
     }
 
-    parts.push({ text, wrapped: line.isWrapped });
+    const fullLineText = line.translateToString(true);
+    parts.push({
+      text,
+      wrapped: line.isWrapped,
+      fullCw: cellWidth(fullLineText),
+      fullLineText,
+    });
   }
 
   if (parts.length === 0) return null;
@@ -66,7 +77,7 @@ export function getSelectionText(term: Terminal): string | null {
       result += parts[i].text;
     } else if (
       !parts[i - 1].wrapped &&
-      cellWidth(parts[i - 1].text) >= cols &&
+      parts[i - 1].fullCw >= cols &&
       parts[i].text !== "" &&
       !parts[i].text.startsWith("- ") &&
       !parts[i].text.startsWith("* ") &&
@@ -74,12 +85,16 @@ export function getSelectionText(term: Terminal): string | null {
     ) {
       const trimmedPrev = result.trimEnd();
       const trimmedNext = parts[i].text.trimStart();
-      const hadTrailingSpace = trimmedPrev.length < result.length;
+      // Check full line for trailing space (word-boundary wrap implies
+      // the gap between last word and terminal boundary is spaces)
+      const fullLineTrimmed = parts[i - 1].fullLineText.trimEnd();
+      const hadTrailingSpace =
+        trimmedPrev.length < result.length ||
+        fullLineTrimmed.length < parts[i - 1].fullLineText.length;
+      const hadLeadingSpace = trimmedNext.length < parts[i].text.length;
       result =
         trimmedPrev +
-        (hadTrailingSpace || trimmedNext.length < parts[i].text.length
-          ? " "
-          : "") +
+        (hadTrailingSpace || hadLeadingSpace ? " " : "") +
         trimmedNext;
     } else {
       result += "\n" + parts[i].text;

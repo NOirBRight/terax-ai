@@ -325,4 +325,16 @@ describe("getSelectionText", () => {
       "\u8ba9\u6211\u4eec\u770b\u770b\u8fd9\u4e2a\u957f\u6587\u672c \u662f\u5426\u88ab\u6b63\u786e\u5408\u5e76",
     );
   });
+
+  it("hard-wrap detected even when selection starts mid-line", () => {
+    // Full line fills terminal width, selection starts from column 5
+    const term = mockTerm(
+      [mockLine("abcdefghij", false), mockLine("klmnop", false)],
+      { start: { x: 5, y: 0 }, end: { x: 6, y: 1 } },
+      10,
+    );
+    // Line 0 full cw=10=cols → hard-wrapped. Selection gets "fghij".
+    // No trailing/leading spaces to suggest word-boundary → direct join
+    expect(getSelectionText(term as unknown as Terminal)).toBe("fghijklmnop");
+  });
 });
