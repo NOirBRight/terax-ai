@@ -288,4 +288,19 @@ describe("getSelectionText", () => {
     );
     expect(getSelectionText(term as unknown as Terminal)).toBe("ls\ncd");
   });
+
+  it("joins hard-wrapped lines with CJK characters that fill terminal width", () => {
+    // \u8ba9 takes 2 columns. With cols=10, line0 has 10 cells.
+    const term = mockTerm(
+      [mockLine("\u8ba9ABCDEFGH", false), mockLine("IJKLMNOPQR", false)],
+      { start: { x: 0, y: 0 }, end: { x: 10, y: 1 } },
+      10,
+    );
+    // Line 0: cell width = 2(CJK) + 8(ASCII) = 10 = cols, hard-wrapped
+    // Line 1: cell width = 10 = cols, hard-wrapped
+    // Both join into one line
+    expect(getSelectionText(term as unknown as Terminal)).toBe(
+      "\u8ba9ABCDEFGHIJKLMNOPQR",
+    );
+  });
 });

@@ -1,30 +1,38 @@
 import type { Terminal } from "@xterm/xterm";
 
 /**
- * Detect if a line was hard-wrapped at the terminal column width.
- * A line is considered hard-wrapped if its trimmed length equals or exceeds
- * `cols`, AND the next line also has content (not a paragraph break).
- * This handles programs like Pi CLI that output text with explicit \n
- * at the terminal width instead of relying on the terminal's soft wrap.
+ * Calculate the terminal column width of a string, treating
+ * East Asian Wide (CJK) characters as 2 columns and everything
+ * else as 1. This matches how terminals render text.
  */
-function isHardWrappedLine(
-  parts: { text: string; wrapped: boolean }[],
-  index: number,
-  cols: number,
-): boolean {
-  if (cols <= 0) return false;
-  const part = parts[index];
-  // Only consider joining if the line is NOT soft-wrapped and fills the width
-  if (part.wrapped || part.text.length < cols) return false;
-  // Don't join if this is the last line
-  if (index >= parts.length - 1) return false;
-  // Don't join if the next line starts with common paragraph indicators
-  // (blank line, list markers, etc.) — those are real breaks
-  const next = parts[index + 1].text;
-  if (next === "" || next.startsWith("  ") || next.startsWith("- ") || next.startsWith("* ")) {
-    return false;
+function cellWidth(s: string): number {
+  let w = 0;
+  for (let i = 0; i < s.length; i++) {
+    const cp = s.codePointAt(i)!;
+    if (
+      (cp >= 0x1100 && cp <= 0x115f) || // Hangul Jamo
+      (cp >= 0x2329 && cp <= 0x232a) || // Angle brackets
+      (cp >= 0x2e80 && cp <= 0x303e) || // CJK/Radical/Stroke
+      (cp >= 0x3040 && cp <= 0x3247) || // Hiragana/Katakana/Bopomofo
+      (cp >= 0x3250 && cp <= 0x4dbf) || // CJK Unified Ideographs Extension
+      (cp >= 0x4e00 && cp <= 0x9fff) || // CJK Unified Ideographs
+      (cp >= 0xa000 && cp <= 0xa4cf) || // Yi Syllables/Radicals
+      (cp >= 0xac00 && cp <= 0xd7a3) || // Hangul Syllables
+      (cp >= 0xf900 && cp <= 0xfaff) || // CJK Compatibility Ideographs
+      (cp >= 0xfe10 && cp <= 0xfe19) || // Vertical Forms
+      (cp >= 0xfe30 && cp <= 0xfe6f) || // CJK Compatibility Forms
+      (cp >= 0xff01 && cp <= 0xff60) || // Fullwidth Forms
+      (cp >= 0xffe0 && cp <= 0xffe6) || // Fullwidth Signs
+      (cp >= 0x20000 && cp <= 0x2fffd) || // CJK Extension B-I
+      (cp >= 0x30000 && cp <= 0x3fffd)  // CJK Extension G
+    ) {
+      w += 2;
+      if (cp > 0xffff) i++; // Skip low surrogate
+    } else {
+      w += 1;
+    }
   }
-  return true;
+  return w;
 }
 
 export function getSelectionText(term: Terminal): string | null {
@@ -60,13 +68,21 @@ export function getSelectionText(term: Terminal): string | null {
   let result = parts[0].text;
   for (let i = 1; i < parts.length; i++) {
     if (parts[i].wrapped) {
-      // Soft wrap: join without separator
+      // Soft wrap (xterm.js isWrapped=true): always join
       result += parts[i].text;
-    } else if (isHardWrappedLine(parts, i - 1, cols)) {
-      // Hard wrap at column width: join without separator
+    } else if (
+      // Hard-wrap heuristic: previous line filled terminal width but was NOT
+      // a soft continuation. Programs like Pi CLI output \n at column width.
+      !parts[i - 1].wrapped &&
+      cellWidth(parts[i - 1].text) >= cols &&
+      parts[i].text !== "" &&
+      !parts[i].text.startsWith("  ") &&
+      !parts[i].text.startsWith("- ") &&
+      !parts[i].text.startsWith("* ") &&
+      !parts[i].text.startsWith("\u2022 ")
+    ) {
       result += parts[i].text;
     } else {
-      // Real line break: preserve
       result += "\n" + parts[i].text;
     }
   }
