@@ -52,6 +52,13 @@ function lineMostlyFillsCols(cw: number, cols: number): boolean {
   return cols > 0 && cw >= cols * 0.6;
 }
 
+function isParagraphStart(text: string): boolean {
+  const t = text.trimStart();
+  if (t.startsWith("\u2022 ")) return true;
+  if (/^\d+\.\s/.test(t)) return true;
+  return false;
+}
+
 export function getSelectionText(term: Terminal): string | null {
   const pos = term.getSelectionPosition();
   if (!pos) return null;
@@ -111,9 +118,7 @@ export function getSelectionText(term: Terminal): string | null {
       !prev.wrapped &&
       (prev.lastCellContent || lineMostlyFillsCols(prev.fullCw, cols)) &&
       curr.text !== "" &&
-      !curr.text.startsWith("- ") &&
-      !curr.text.startsWith("* ") &&
-      !curr.text.startsWith("\u2022 ")
+      !isParagraphStart(curr.text)
     ) {
       const trimmedPrev = result.trimEnd();
       const trimmedNext = curr.text.trimStart();

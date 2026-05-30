@@ -11,24 +11,6 @@ function mockCell(code: number, width: number): IBufferCell {
   } as unknown as IBufferCell;
 }
 
-/**
- * Create a mock IBufferLine.
- * @param content  The actual text content (characters written by the program)
- * @param wrapped  isWrapped flag
- * @param cols     Terminal column count
- * @param trailingSpaces  Number of explicit trailing spaces AFTER content
- *                         (these are written by the program, e.g. word-boundary padding)
- *
- * Cell layout: [content chars][trailing spaces][empty cells = code 32, width 1]
- * - Content chars: code = charCode, width = 1
- * - Trailing spaces: code = 32, width = 1
- * - Empty cells: code = 32, width = 1 (xterm.js default)
- *
- * Note: In xterm.js, ALL cells default to space (code=32, width=1).
- * We cannot distinguish "program wrote a space" from "empty cell" via getCode.
- * The ONLY distinguishable signal is getCode() > 32 at the last cell
- * (meaning content fills to the column boundary with a non-space char).
- */
 function mockLine(
   content: string,
   wrapped: boolean,
@@ -39,10 +21,8 @@ function mockLine(
   const cells: IBufferCell[] = [];
   for (let i = 0; i < cols; i++) {
     if (i < fullContent.length) {
-      // Written cell: content char or explicit space
       cells.push(mockCell(fullContent.charCodeAt(i), 1));
     } else {
-      // Empty cell: xterm.js fills with space
       cells.push(mockCell(32, 1));
     }
   }
@@ -157,36 +137,29 @@ describe("getSelectionText", () => {
     expect(getSelectionText(term)).toBe("abc\n");
   });
 
-  // ====== HARD WRAP: mid-word (last cell has content char, code > 32) ======
+  // ====== HARD WRAP: mid-word (last cell code > 32) ======
 
   it("joins mid-word hard-wrapped lines when last cell is content", () => {
-    // "abcdefghij" fills cols=10 exactly, last cell 'j' code=106 > 32
-    // Next line also fills cols exactly
     const term = mockTerm(
       [mockLine("abcdefghij", false, 10), mockLine("klmnopqrst", false, 10)],
       { start: { x: 0, y: 0 }, end: { x: 10, y: 1 } },
       10,
     );
-    // Mid-word wrap: space added (conservative default)
     expect(getSelectionText(term)).toBe("abcdefghij klmnopqrst");
   });
 
   it("detects hard wrap when selection starts mid-line (lastCellContent)", () => {
-    // Full line fills cols, selection starts from col 5
     const term = mockTerm(
       [mockLine("abcdefghij", false, 10), mockLine("klmnopqr", false, 10)],
       { start: { x: 5, y: 0 }, end: { x: 8, y: 1 } },
       10,
     );
-    // parts[0].text = "fghij", but full line fills cols → join
     expect(getSelectionText(term)).toBe("fghij klmnopqr");
   });
 
-  // ====== HARD WRAP: word-boundary (trailing spaces, last cell = space) ======
+  // ====== HARD WRAP: word-boundary (trailing spaces, fullCw >= 60%) ======
 
   it("joins word-boundary hard-wrapped lines where fullCw >= 60% cols", () => {
-    // "abcdefgh" + 2 trailing spaces, cols=10. fullCw=8 >= 6
-    // "ijklmnop" + 2 trailing spaces, fullCw=8 >= 6
     const term = mockTerm(
       [mockLine("abcdefgh", false, 10, 2), mockLine("ijklmnop", false, 10, 2)],
       { start: { x: 0, y: 0 }, end: { x: 10, y: 1 } },
@@ -196,7 +169,6 @@ describe("getSelectionText", () => {
   });
 
   it("does NOT join when fullCw < 60% of cols (short real line)", () => {
-    // "ab" + empty, cols=80. fullCw=2 < 48
     const term = mockTerm(
       [mockLine("ab", false, 80), mockLine("cd", false, 80)],
       { start: { x: 0, y: 0 }, end: { x: 2, y: 1 } },
@@ -206,9 +178,6 @@ describe("getSelectionText", () => {
   });
 
   it("detects word-boundary hard wrap from full line even when selection starts mid-line", () => {
-    // Full line: "abcdefgh" + 2 spaces, cols=10, fullCw=8 >= 6
-    // Selection starts from col 3 → parts[0].text = "defgh  "
-    // fullCw is from FULL line (not selected portion)
     const term = mockTerm(
       [mockLine("abcdefgh", false, 10, 2), mockLine("ijkl", false, 10)],
       { start: { x: 3, y: 0 }, end: { x: 4, y: 1 } },
@@ -217,34 +186,7 @@ describe("getSelectionText", () => {
     expect(getSelectionText(term)).toBe("defgh ijkl");
   });
 
-  // ====== HARD WRAP: paragraph breaks (should NOT join) ======
-
-  it("does not join before blank line even if prev fills cols", () => {
-    const term = mockTerm(
-      [mockLine("abcdefghij", false, 10), mockLine("", false, 10), mockLine("next", false, 10)],
-      { start: { x: 0, y: 0 }, end: { x: 4, y: 2 } },
-      10,
-    );
-    expect(getSelectionText(term)).toBe("abcdefghij\n\nnext");
-  });
-
-  it("does not join before list marker '- ' even if prev fills cols", () => {
-    const term = mockTerm(
-      [mockLine("abcdefghij", false, 10), mockLine("- item", false, 10)],
-      { start: { x: 0, y: 0 }, end: { x: 6, y: 1 } },
-      10,
-    );
-    expect(getSelectionText(term)).toBe("abcdefghij\n- item");
-  });
-
-  it("does not join before list marker '* '", () => {
-    const term = mockTerm(
-      [mockLine("abcdefghij", false, 10), mockLine("* item", false, 10)],
-      { start: { x: 0, y: 0 }, end: { x: 6, y: 1 } },
-      10,
-    );
-    expect(getSelectionText(term)).toBe("abcdefghij\n* item");
-  });
+  // ====== PARAGRAPH BREAKS: bullet and numbered list ======
 
   it("does not join before bullet marker", () => {
     const term = mockTerm(
@@ -255,53 +197,87 @@ describe("getSelectionText", () => {
     expect(getSelectionText(term)).toBe("abcdefghij\n\u2022 item");
   });
 
+  it("does not join before indented bullet marker", () => {
+    const term = mockTerm(
+      [mockLine("abcdefghij", false, 10), mockLine(" \u2022 item", false, 10)],
+      { start: { x: 0, y: 0 }, end: { x: 7, y: 1 } },
+      10,
+    );
+    expect(getSelectionText(term)).toBe("abcdefghij\n \u2022 item");
+  });
+
+  it("does not join before numbered list marker", () => {
+    const term = mockTerm(
+      [mockLine("abcdefghij", false, 10), mockLine("2. item", false, 10)],
+      { start: { x: 0, y: 0 }, end: { x: 7, y: 1 } },
+      10,
+    );
+    expect(getSelectionText(term)).toBe("abcdefghij\n2. item");
+  });
+
+  it("does not join before indented numbered list marker", () => {
+    const term = mockTerm(
+      [mockLine("abcdefghij", false, 10), mockLine(" 3. item", false, 10)],
+      { start: { x: 0, y: 0 }, end: { x: 8, y: 1 } },
+      10,
+    );
+    expect(getSelectionText(term)).toBe("abcdefghij\n 3. item");
+  });
+
+  // ====== DASH IS AMBIGUOUS (not treated as paragraph break) ======
+
+  it("dash connector IS joined with hard-wrapped predecessor", () => {
+    const term = mockTerm(
+      [mockLine("abcdefghij", false, 10), mockLine(" - next", false, 10)],
+      { start: { x: 0, y: 0 }, end: { x: 7, y: 1 } },
+      10,
+    );
+    expect(getSelectionText(term)).toBe("abcdefghij - next");
+  });
+
+  it("dash at line start (not a list marker) is joined", () => {
+    const term = mockTerm(
+      [mockLine("abcdefghij", false, 10), mockLine("- next", false, 10)],
+      { start: { x: 0, y: 0 }, end: { x: 6, y: 1 } },
+      10,
+    );
+    expect(getSelectionText(term)).toBe("abcdefghij - next");
+  });
+
+  it("asterisk at line start (not a list marker) is joined", () => {
+    const term = mockTerm(
+      [mockLine("abcdefghij", false, 10), mockLine("* next", false, 10)],
+      { start: { x: 0, y: 0 }, end: { x: 6, y: 1 } },
+      10,
+    );
+    expect(getSelectionText(term)).toBe("abcdefghij * next");
+  });
+
   // ====== HARD WRAP: mixed chain ======
 
   it("joins a chain of hard-wrapped lines, keeps real break at end", () => {
-    // Line 0: fills cols (hard-wrapped)
-    // Line 1: fills cols (hard-wrapped)
-    // Line 2: short (real paragraph ending)
-    // Line 3: start of new paragraph (short)
     const term = mockTerm(
       [
-        mockLine("abcdefghij", false, 10), // hard-wrapped
-        mockLine("klmnopqrst", false, 10), // hard-wrapped
-        mockLine("uv", false, 10),         // last line of paragraph (short)
-        mockLine("New para", false, 10),   // new paragraph (short)
+        mockLine("abcdefghij", false, 10),
+        mockLine("klmnopqrst", false, 10),
+        mockLine("uv", false, 10),
+        mockLine("New para", false, 10),
       ],
       { start: { x: 0, y: 0 }, end: { x: 8, y: 3 } },
       10,
     );
-    // 0→1: join (hard-wrapped), 1→2: join (hard-wrapped), 2→3: break (short)
     expect(getSelectionText(term)).toBe("abcdefghij klmnopqrst uv\nNew para");
   });
 
   // ====== HARD WRAP: indentation trimming ======
 
   it("trims indentation on continuation lines of hard-wrapped text", () => {
-    // Line 0: "abcdefgh" + 2 trailing spaces, cols=10, fullCw=8 >= 6
-    // Line 1: "    ijkl" (4-space indent + content)
     const term = mockTerm(
       [mockLine("abcdefgh", false, 10, 2), mockLine("    ijkl", false, 10)],
       { start: { x: 0, y: 0 }, end: { x: 8, y: 1 } },
       10,
     );
-    // "abcdefgh" trimmed + space + "ijkl" (indentation trimmed)
     expect(getSelectionText(term)).toBe("abcdefgh ijkl");
-  });
-
-  // ====== HARD WRAP: CJK ======
-
-  it("CJK line filling cols exactly is detected as hard-wrapped", () => {
-    // We can't easily mock CJK in our mockLine, but we can test the fullCw path.
-    // Create a line where content width (with CJK) >= cols.
-    // For mock purposes, a line that fills cols exactly (like mid-word) works:
-    const term = mockTerm(
-      [mockLine("abcdefghij", false, 10), mockLine("klmnop", false, 10)],
-      { start: { x: 0, y: 0 }, end: { x: 6, y: 1 } },
-      10,
-    );
-    expect(getSelectionText(term)).toBe("abcdefghij klmnop");
   });
 
   // ====== REAL-LIFE SCENARIOS ======
@@ -335,5 +311,14 @@ describe("getSelectionText", () => {
       { start: { x: 2, y: 0 }, end: { x: 5, y: 2 } },
     );
     expect(getSelectionText(term)).toBe("cdefghijklmnopqrst\nuvwxy");
+  });
+
+  it("preserves blank line after hard-wrapped line", () => {
+    const term = mockTerm(
+      [mockLine("abcdefghij", false, 10), mockLine("", false, 10), mockLine("next", false, 10)],
+      { start: { x: 0, y: 0 }, end: { x: 4, y: 2 } },
+      10,
+    );
+    expect(getSelectionText(term)).toBe("abcdefghij\n\nnext");
   });
 });
