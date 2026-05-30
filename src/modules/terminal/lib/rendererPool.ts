@@ -429,6 +429,7 @@ function rewireSlot(slot: Slot, p: AcquireParams): void {
   }
   slot.lastCols = slot.term.cols;
   slot.lastRows = slot.term.rows;
+  attachCopyListener(slot);
   p.onSearchReady(slot.searchAddon);
 }
 
