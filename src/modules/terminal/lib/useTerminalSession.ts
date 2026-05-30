@@ -508,7 +508,7 @@ export function useTerminalSession({
 
   const getSelection = useCallback((): string | null => {
     const slot = getSlotForLeaf(leafId);
-    return slot ? getSelectionText(slot.term, slot.hardWrapTracker) : null;
+    return slot ? getSelectionText(slot.term) : null;
   }, [leafId]);
 
   const applyTheme = useCallback(() => {
