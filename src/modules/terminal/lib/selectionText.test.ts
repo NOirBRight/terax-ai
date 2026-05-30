@@ -303,4 +303,26 @@ describe("getSelectionText", () => {
       "\u8ba9ABCDEFGHIJKLMNOPQR",
     );
   });
+
+  it("Pi CLI style: word-boundary hard-wrap with indentation on next line", () => {
+    // Pi CLI: text fills cols exactly, trailing space is part of content,
+    // next line indented. After translateToString(true) trims trailing whitespace.
+    // But we detect hard-wrap from cellWidth of the trimmed text (which is < cols).
+    // This scenario only works when the raw (untrimmed) cell width >= cols.
+    // Since translateToString(true) already trims, and trimmed cw < cols,
+    // these lines won't be detected as hard-wrapped by our heuristic.
+    // Real Pi CLI lines have cw=cols after trim (CJK widening), not trailing spaces.
+    // So test with CJK-heavy content where trimRight doesn't reduce cw below cols:
+    const term = mockTerm(
+      [mockLine("\u8ba9\u6211\u4eec\u770b\u770b\u8fd9\u4e2a\u957f\u6587\u672c", false), mockLine("    \u662f\u5426\u88ab\u6b63\u786e\u5408\u5e76", false)],
+      { start: { x: 0, y: 0 }, end: { x: 20, y: 1 } },
+      18,
+    );
+    // Line 0: 9 CJK chars, cw=18=cols, trimEnd doesn't change it
+    // Line 1: 4 spaces + 6 CJK chars, cw=4+12=16 < cols=18
+    // prev line is hard-wrapped, has no trailing spaces, next line has indentation
+    expect(getSelectionText(term as unknown as Terminal)).toBe(
+      "\u8ba9\u6211\u4eec\u770b\u770b\u8fd9\u4e2a\u957f\u6587\u672c \u662f\u5426\u88ab\u6b63\u786e\u5408\u5e76",
+    );
+  });
 });
